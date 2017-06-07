@@ -373,6 +373,12 @@ void EdgeBasedGraphFactory::GenerateEdgeExpandedEdges(
         // going over all nodes (which form the center of an intersection), we compute all
         // possible turns along these intersections.
         tbb::mutex merge_mutex; // To control merging of all the data into the main data structures
+        tbb::mutex bearing_hash_mutex; // To control entry into the two hash maps
+        tbb::mutex entry_hash_mutex;   // To control entry into the two hash maps
+        tbb::concurrent_vector<BearingClassID> threadsafe_bearing_class_by_node_based_node;
+
+        threadsafe_bearing_class_by_node_based_node.resize(bearing_class_by_node_based_node.size());
+
         tbb::parallel_for(
             tbb::blocked_range<NodeID>(0, m_node_based_graph->GetNumberOfNodes()),
             [&](const tbb::blocked_range<NodeID> &intersection_node_range) {
@@ -384,7 +390,7 @@ void EdgeBasedGraphFactory::GenerateEdgeExpandedEdges(
                 std::vector<TurnPenalty> local_turn_weight_penalties;
                 std::vector<TurnPenalty> local_turn_duration_penalties;
 
-                TurnDataExternalContainer local_turn_data_container;
+                std::vector<TurnData> local_turn_data_container;
 
                 for (auto node_at_center_of_intersection = intersection_node_range.begin(),
                           range_end = intersection_node_range.end();
@@ -459,6 +465,7 @@ void EdgeBasedGraphFactory::GenerateEdgeExpandedEdges(
 
                         const auto entry_class_id = [&](
                             const util::guidance::EntryClass entry_class) {
+                            tbb::mutex::scoped_lock lock(entry_hash_mutex);
                             if (0 == entry_class_hash.count(entry_class))
                             {
                                 const auto id = static_cast<std::uint16_t>(entry_class_hash.size());
@@ -473,6 +480,7 @@ void EdgeBasedGraphFactory::GenerateEdgeExpandedEdges(
 
                         const auto bearing_class_id =
                             [&](const util::guidance::BearingClass bearing_class) {
+                                tbb::mutex::scoped_lock lock(bearing_hash_mutex);
                                 if (0 == bearing_class_hash.count(bearing_class))
                                 {
                                     const auto id =
@@ -485,8 +493,9 @@ void EdgeBasedGraphFactory::GenerateEdgeExpandedEdges(
                                     return bearing_class_hash.find(bearing_class)->second;
                                 }
                             }(turn_classification.second);
-                        bearing_class_by_node_based_node[node_at_center_of_intersection] =
-                            bearing_class_id;
+
+                        threadsafe_bearing_class_by_node_based_node
+                            [node_at_center_of_intersection] = bearing_class_id;
 
                         for (const auto &turn : intersection)
                         {
@@ -505,11 +514,11 @@ void EdgeBasedGraphFactory::GenerateEdgeExpandedEdges(
 
                             // the following is the core of the loop.
                             local_turn_data_container.push_back(
-                                turn.instruction,
-                                turn.lane_data_id,
-                                entry_class_id,
-                                util::guidance::TurnBearing(intersection[0].bearing),
-                                util::guidance::TurnBearing(turn.bearing));
+                                {turn.instruction,
+                                 turn.lane_data_id,
+                                 entry_class_id,
+                                 util::guidance::TurnBearing(intersection[0].bearing),
+                                 util::guidance::TurnBearing(turn.bearing)});
 
                             // compute weight and duration penalties
                             auto is_traffic_light =
@@ -597,13 +606,16 @@ void EdgeBasedGraphFactory::GenerateEdgeExpandedEdges(
                                                  local_turn_weight_penalties.end());
                     turn_duration_penalties.insert(turn_duration_penalties.end(),
                                                    local_turn_duration_penalties.begin(),
-                                                   local_turn_weight_penalties.end());
+                                                   local_turn_duration_penalties.end());
                     turn_data_container.append(local_turn_data_container);
 
                     turn_penalties_index_file.WriteFrom(local_turn_indexes.data(),
                                                         local_turn_indexes.size());
                 }
             });
+        bearing_class_by_node_based_node.insert(bearing_class_by_node_based_node.end(),
+                                                threadsafe_bearing_class_by_node_based_node.begin(),
+                                                threadsafe_bearing_class_by_node_based_node.end());
 
         // Now, update the turn_id property on every EdgeBasedEdge - it will equal the
         // position in the m_edge_based_edge_list array for each object.

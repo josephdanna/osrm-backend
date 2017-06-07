@@ -31,6 +31,15 @@ void write(storage::io::FileWriter &writer,
            const detail::TurnDataContainerImpl<Ownership> &turn_data);
 }
 
+struct TurnData
+{
+    extractor::guidance::TurnInstruction turn_instruction;
+    LaneDataID lane_data_id;
+    EntryClassID entry_class_id;
+    util::guidance::TurnBearing pre_turn_bearing;
+    util::guidance::TurnBearing post_turn_bearing;
+};
+
 namespace detail
 {
 template <storage::Ownership Ownership> class TurnDataContainerImpl
@@ -89,24 +98,15 @@ template <storage::Ownership Ownership> class TurnDataContainerImpl
     }
 
     template <typename = std::enable_if<Ownership == storage::Ownership::Container>>
-    void append(const TurnDataContainerImpl &other)
+    void append(const std::vector<TurnData> &others)
     {
-        std::for_each(other.turn_instructions.begin(),
-                      other.turn_instructions.end(),
-                      [this](auto &f) { turn_instructions.push_back(f); });
-        std::for_each(other.lane_data_ids.begin(), other.lane_data_ids.end(), [this](auto &f) {
-            lane_data_ids.push_back(f);
+        std::for_each(others.begin(), others.end(), [this](auto &other) {
+            turn_instructions.push_back(other.turn_instruction);
+            lane_data_ids.push_back(other.lane_data_id);
+            entry_class_ids.push_back(other.entry_class_id);
+            pre_turn_bearings.push_back(other.pre_turn_bearing);
+            post_turn_bearings.push_back(other.post_turn_bearing);
         });
-
-        std::for_each(other.entry_class_ids.begin(), other.entry_class_ids.end(), [this](auto &f) {
-            entry_class_ids.push_back(f);
-        });
-        std::for_each(other.pre_turn_bearings.begin(),
-                      other.pre_turn_bearings.end(),
-                      [this](auto &f) { pre_turn_bearings.push_back(f); });
-        std::for_each(other.post_turn_bearings.begin(),
-                      other.post_turn_bearings.end(),
-                      [this](auto &f) { post_turn_bearings.push_back(f); });
     }
 
     friend void serialization::read<Ownership>(storage::io::FileReader &reader,
