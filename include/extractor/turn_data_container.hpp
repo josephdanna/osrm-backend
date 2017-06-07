@@ -88,6 +88,27 @@ template <storage::Ownership Ownership> class TurnDataContainerImpl
         post_turn_bearings.push_back(post_turn_bearing);
     }
 
+    template <typename = std::enable_if<Ownership == storage::Ownership::Container>>
+    void append(const TurnDataContainerImpl &other)
+    {
+        std::for_each(other.turn_instructions.begin(),
+                      other.turn_instructions.end(),
+                      [this](auto &f) { turn_instructions.push_back(f); });
+        std::for_each(other.lane_data_ids.begin(), other.lane_data_ids.end(), [this](auto &f) {
+            lane_data_ids.push_back(f);
+        });
+
+        std::for_each(other.entry_class_ids.begin(), other.entry_class_ids.end(), [this](auto &f) {
+            entry_class_ids.push_back(f);
+        });
+        std::for_each(other.pre_turn_bearings.begin(),
+                      other.pre_turn_bearings.end(),
+                      [this](auto &f) { pre_turn_bearings.push_back(f); });
+        std::for_each(other.post_turn_bearings.begin(),
+                      other.post_turn_bearings.end(),
+                      [this](auto &f) { post_turn_bearings.push_back(f); });
+    }
+
     friend void serialization::read<Ownership>(storage::io::FileReader &reader,
                                                TurnDataContainerImpl &turn_data_container);
     friend void serialization::write<Ownership>(storage::io::FileWriter &writer,

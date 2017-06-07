@@ -41,6 +41,8 @@
 
 #include <boost/filesystem/fstream.hpp>
 
+#include <tbb/concurrent_vector.h>
+
 namespace osrm
 {
 namespace extractor
